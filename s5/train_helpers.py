@@ -1,6 +1,6 @@
 from functools import partial
 import jax
-import jax.numpy as np
+import jax.numpy as jnp
 from jax.nn import one_hot
 from tqdm import tqdm
 from flax.training import train_state
@@ -15,8 +15,8 @@ def linear_warmup(step, base_lr, end_step, lr_min=None):
 
 def cosine_annealing(step, base_lr, end_step, lr_min=1e-6):
     # https://github.com/deepmind/optax/blob/master/optax/_src/schedule.py#L207#L240
-    count = np.minimum(step, end_step)
-    cosine_decay = 0.5 * (1 + np.cos(np.pi * count / end_step))
+    count = jnp.minimum(step, end_step)
+    cosine_decay = 0.5 * (1 + jnp.cos(jnp.pi * count / end_step))
     decayed = (base_lr - lr_min) * cosine_decay + lr_min
     return decayed
 
@@ -55,12 +55,12 @@ def update_learning_rate_per_step(lr_params, state):
     step += 1
 
     # Update state
-    state.opt_state.inner_states['regular'].inner_state.hyperparams['learning_rate'] = np.array(lr_val, dtype=np.float32)
-    state.opt_state.inner_states['ssm'].inner_state.hyperparams['learning_rate'] = np.array(ssm_lr_val, dtype=np.float32)
+    state.opt_state.inner_states['regular'].inner_state.hyperparams['learning_rate'] = jnp.array(lr_val, dtype=jnp.float32)
+    state.opt_state.inner_states['ssm'].inner_state.hyperparams['learning_rate'] = jnp.array(ssm_lr_val, dtype=jnp.float32)
     if opt_config in ["BandCdecay"]:
         # In this case we are applying the ssm learning rate to B, even though
         # we are also using weight decay on B
-        state.opt_state.inner_states['none'].inner_state.hyperparams['learning_rate'] = np.array(ssm_lr_val, dtype=np.float32)
+        state.opt_state.inner_states['none'].inner_state.hyperparams['learning_rate'] = jnp.array(ssm_lr_val, dtype=jnp.float32)
 
     return state, step
 
@@ -116,14 +116,14 @@ def create_train_state(model_cls,
     if padded:
         if retrieval:
             # For retrieval tasks we have two different sets of "documents"
-            dummy_input = (np.ones((2*bsz, seq_len, in_dim)), np.ones(2*bsz))
-            integration_timesteps = np.ones((2*bsz, seq_len,))
+            dummy_input = (jnp.ones((2*bsz, seq_len, in_dim)), jnp.ones(2*bsz))
+            integration_timesteps = jnp.ones((2*bsz, seq_len,))
         else:
-            dummy_input = (np.ones((bsz, seq_len, in_dim)), np.ones(bsz))
-            integration_timesteps = np.ones((bsz, seq_len,))
+            dummy_input = (jnp.ones((bsz, seq_len, in_dim)), jnp.ones(bsz))
+            integration_timesteps = jnp.ones((bsz, seq_len,))
     else:
-        dummy_input = np.ones((bsz, seq_len, in_dim))
-        integration_timesteps = np.ones((bsz, seq_len, ))
+        dummy_input = jnp.ones((bsz, seq_len, in_dim))
+        integration_timesteps = jnp.ones((bsz, seq_len, ))
 
     model = model_cls(training=True)
     init_rng, dropout_rng = jax.random.split(rng, num=2)
@@ -250,7 +250,7 @@ def create_train_state(model_cls,
             ssm_fn,
         )
 
-    fn_is_complex = lambda x: x.dtype in [np.complex64, np.complex128]
+    fn_is_complex = lambda x: x.dtype in [jnp.complex64, jnp.complex128]
     param_sizes = map_nested_fn(lambda k, param: param.size * (2 if fn_is_complex(param) else 1))(params)
     print(f"[*] Trainable Parameters: {sum(jax.tree_leaves(param_sizes))}")
 
@@ -263,20 +263,20 @@ def create_train_state(model_cls,
 
 
 # Train and eval steps
-@partial(np.vectorize, signature="(c),()->()")
+@partial(jnp.vectorize, signature="(c),()->()")
 def cross_entropy_loss(logits, label):
     one_hot_label = jax.nn.one_hot(label, num_classes=logits.shape[0])
-    return -np.sum(one_hot_label * logits)
+    return -jnp.sum(one_hot_label * logits)
 
 
-@partial(np.vectorize, signature="(c),()->()")
+@partial(jnp.vectorize, signature="(c),()->()")
 def compute_accuracy(logits, label):
-    return np.argmax(logits) == label
+    return jnp.argmax(logits) == label
 
 
 def prep_batch(batch: tuple,
                seq_len: int,
-               in_dim: int) -> Tuple[np.ndarray, np.ndarray, np.array]:
+               in_dim: int) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.array]:
     """
     Take a batch and convert it to a standard x/y format.
     :param batch:       (x, y, aux_data) as returned from dataloader.
@@ -293,7 +293,7 @@ def prep_batch(batch: tuple,
         raise RuntimeError("Err... not sure what I should do... Unhandled data type. ")
 
     # Convert to JAX.
-    inputs = np.asarray(inputs.numpy())
+    inputs = jnp.asarray(inputs.numpy())
 
     # Grab lengths from aux if it is there.
     lengths = aux_data.get('lengths', None)
@@ -302,29 +302,29 @@ def prep_batch(batch: tuple,
     num_pad = seq_len - inputs.shape[1]
     if num_pad > 0:
         # Assuming vocab padding value is zero
-        inputs = np.pad(inputs, ((0, 0), (0, num_pad)), 'constant', constant_values=(0,))
+        inputs = jnp.pad(inputs, ((0, 0), (0, num_pad)), 'constant', constant_values=(0,))
 
     # Inputs is either [n_batch, seq_len] or [n_batch, seq_len, in_dim].
     # If there are not three dimensions and trailing dimension is not equal to in_dim then
     # transform into one-hot.  This should be a fairly reliable fix.
     if (inputs.ndim < 3) and (inputs.shape[-1] != in_dim):
-        inputs = one_hot(np.asarray(inputs), in_dim)
+        inputs = one_hot(jnp.asarray(inputs), in_dim)
 
     # If there are lengths, bundle them up.
     if lengths is not None:
-        lengths = np.asarray(lengths.numpy())
+        lengths = jnp.asarray(lengths.numpy())
         full_inputs = (inputs.astype(float), lengths.astype(float))
     else:
         full_inputs = inputs.astype(float)
 
     # Convert and apply.
-    targets = np.array(targets.numpy())
+    targets = jnp.array(targets.numpy())
 
     # If there is an aux channel containing the integration times, then add that.
     if 'timesteps' in aux_data.keys():
-        integration_timesteps = np.diff(np.asarray(aux_data['timesteps'].numpy()))
+        integration_timesteps = jnp.diff(jnp.asarray(aux_data['timesteps'].numpy()))
     else:
-        integration_timesteps = np.ones((len(inputs), seq_len))
+        integration_timesteps = jnp.ones((len(inputs), seq_len))
 
     return full_inputs, targets.astype(float), integration_timesteps
 
@@ -356,20 +356,20 @@ def train_epoch(state, rng, model, trainloader, seq_len, in_dim, batchnorm, lr_p
         state, step = update_learning_rate_per_step(lr_params, state)
 
     # Return average loss over batches
-    return state, np.mean(np.array(batch_losses)), step
+    return state, jnp.mean(jnp.array(batch_losses)), step
 
 
 def validate(state, model, testloader, seq_len, in_dim, batchnorm, step_rescale=1.0):
     """Validation function that loops over batches"""
     model = model(training=False, step_rescale=step_rescale)
-    losses, accuracies, preds = np.array([]), np.array([]), np.array([])
+    losses, accuracies, preds = jnp.array([]), jnp.array([]), jnp.array([])
     for batch_idx, batch in enumerate(tqdm(testloader)):
         inputs, labels, integration_timesteps = prep_batch(batch, seq_len, in_dim)
         loss, acc, pred = eval_step(inputs, labels, integration_timesteps, state, model, batchnorm)
-        losses = np.append(losses, loss)
-        accuracies = np.append(accuracies, acc)
+        losses = jnp.append(losses, loss)
+        accuracies = jnp.append(accuracies, acc)
 
-    aveloss, aveaccu = np.mean(losses), np.mean(accuracies)
+    aveloss, aveaccu = jnp.mean(losses), jnp.mean(accuracies)
     return aveloss, aveaccu
 
 
@@ -400,7 +400,7 @@ def train_step(state,
                 mutable=["intermediates"],
             )
 
-        loss = np.mean(cross_entropy_loss(logits, batch_labels))
+        loss = jnp.mean(cross_entropy_loss(logits, batch_labels))
 
         return loss, (mod_vars, logits)
 

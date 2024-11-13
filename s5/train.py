@@ -1,6 +1,6 @@
 from functools import partial
 from jax import random
-import jax.numpy as np
+import jax.numpy as jnp
 from jax.scipy.linalg import block_diag
 import wandb
 
@@ -85,7 +85,7 @@ def train(args):
 
     # If initializing state matrix A as block-diagonal, put HiPPO approximation
     # on each block
-    Lambda = (Lambda * np.ones((args.blocks, block_size))).ravel()
+    Lambda = (Lambda * jnp.ones((args.blocks, block_size))).ravel()
     V = block_diag(*([V] * args.blocks))
     Vinv = block_diag(*([Vc] * args.blocks))
 

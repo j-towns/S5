@@ -1,6 +1,6 @@
 from functools import partial
 import jax
-import jax.numpy as np
+import jax.numpy as jnp
 from flax import linen as nn
 from jax.nn.initializers import lecun_normal, normal
 
@@ -18,7 +18,7 @@ def discretize_bilinear(Lambda, B_tilde, Delta):
         Returns:
             discretized Lambda_bar (complex64), B_bar (complex64)  (P,), (P,H)
     """
-    Identity = np.ones(Lambda.shape[0])
+    Identity = jnp.ones(Lambda.shape[0])
 
     BL = 1 / (Identity - (Delta / 2.0) * Lambda)
     Lambda_bar = BL * (Identity + (Delta / 2.0) * Lambda)
@@ -36,8 +36,8 @@ def discretize_zoh(Lambda, B_tilde, Delta):
         Returns:
             discretized Lambda_bar (complex64), B_bar (complex64)  (P,), (P,H)
     """
-    Identity = np.ones(Lambda.shape[0])
-    Lambda_bar = np.exp(Lambda * Delta)
+    Identity = jnp.ones(Lambda.shape[0])
+    Lambda_bar = jnp.exp(Lambda * Delta)
     B_bar = (1/Lambda * (Lambda_bar-Identity))[..., None] * B_tilde
     return Lambda_bar, B_bar
 
@@ -70,7 +70,7 @@ def apply_ssm(Lambda_bar, B_bar, C_tilde, input_sequence, conj_sym, bidirectiona
         Returns:
             ys (float32): the SSM outputs (S5 layer preactivations)      (L, H)
     """
-    Lambda_elements = Lambda_bar * np.ones((input_sequence.shape[0],
+    Lambda_elements = Lambda_bar * jnp.ones((input_sequence.shape[0],
                                             Lambda_bar.shape[0]))
     Bu_elements = jax.vmap(lambda u: B_bar @ u)(input_sequence)
 
@@ -80,7 +80,7 @@ def apply_ssm(Lambda_bar, B_bar, C_tilde, input_sequence, conj_sym, bidirectiona
         _, xs2 = jax.lax.associative_scan(binary_operator,
                                           (Lambda_elements, Bu_elements),
                                           reverse=True)
-        xs = np.concatenate((xs, xs2), axis=-1)
+        xs = jnp.concatenate((xs, xs2), axis=-1)
 
     if conj_sym:
         return jax.vmap(lambda x: 2*(C_tilde @ x).real)(xs)
@@ -152,7 +152,7 @@ class S5SSM(nn.Module):
         self.Lambda_re = self.param("Lambda_re", lambda rng, shape: self.Lambda_re_init, (None,))
         self.Lambda_im = self.param("Lambda_im", lambda rng, shape: self.Lambda_im_init, (None,))
         if self.clip_eigs:
-            self.Lambda = np.clip(self.Lambda_re, None, -1e-4) + 1j * self.Lambda_im
+            self.Lambda = jnp.clip(self.Lambda_re, None, -1e-4) + 1j * self.Lambda_im
         else:
             self.Lambda = self.Lambda_re + 1j * self.Lambda_im
 
@@ -200,7 +200,7 @@ class S5SSM(nn.Module):
 
                 C1 = self.C1[..., 0] + 1j * self.C1[..., 1]
                 C2 = self.C2[..., 0] + 1j * self.C2[..., 1]
-                self.C_tilde = np.concatenate((C1, C2), axis=-1)
+                self.C_tilde = jnp.concatenate((C1, C2), axis=-1)
 
             else:
                 self.C = self.param("C",
@@ -216,7 +216,7 @@ class S5SSM(nn.Module):
         self.log_step = self.param("log_step",
                                    init_log_steps,
                                    (self.P, self.dt_min, self.dt_max))
-        step = self.step_rescale * np.exp(self.log_step[:, 0])
+        step = self.step_rescale * jnp.exp(self.log_step[:, 0])
 
         # Discretize
         if self.discretization in ["zoh"]:

@@ -1,5 +1,5 @@
 import jax
-import jax.numpy as np
+import jax.numpy as jnp
 from flax import linen as nn
 from .layers import SequenceLayer
 
@@ -79,8 +79,8 @@ def masked_meanpool(x, lengths):
         mean pooled output sequence (float32): (d_model)
     """
     L = x.shape[0]
-    mask = np.arange(L) < lengths
-    return np.sum(mask[..., None]*x, axis=0)/lengths
+    mask = jnp.arange(L) < lengths
+    return jnp.sum(mask[..., None]*x, axis=0)/lengths
 
 
 # Here we call vmap to parallelize across a batch of input sequences
@@ -160,7 +160,7 @@ class ClassificationModel(nn.Module):
             if self.padded:
                 x = masked_meanpool(x, length)
             else:
-                x = np.mean(x, axis=0)
+                x = jnp.mean(x, axis=0)
 
         elif self.mode in ["last"]:
             # Just take the last state
@@ -308,7 +308,7 @@ class RetrievalModel(nn.Module):
         x, lengths = input  # x is 2*bsz*seq_len*in_dim, lengths is: (2*bsz,)
         x = self.encoder(x, integration_timesteps)  # The output is: 2*bszxseq_lenxd_model
         outs = batch_masked_meanpool(x, lengths)  # Avg non-padded values: 2*bszxd_model
-        outs0, outs1 = np.split(outs, 2)  # each encoded_i is bszxd_model
-        features = np.concatenate([outs0, outs1, outs0-outs1, outs0*outs1], axis=-1)  # bszx4*d_model
+        outs0, outs1 = jnp.split(outs, 2)  # each encoded_i is bszxd_model
+        features = jnp.concatenate([outs0, outs1, outs0-outs1, outs0*outs1], axis=-1)  # bszx4*d_model
         out = self.decoder(features)
         return nn.log_softmax(out, axis=-1)

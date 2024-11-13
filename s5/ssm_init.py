@@ -1,5 +1,5 @@
 from jax import random
-import jax.numpy as np
+import jax.numpy as jnp
 from jax.nn.initializers import lecun_normal
 from jax.numpy.linalg import eigh
 
@@ -12,9 +12,9 @@ def make_HiPPO(N):
         Returns:
             N x N HiPPO LegS matrix
     """
-    P = np.sqrt(1 + 2 * np.arange(N))
-    A = P[:, np.newaxis] * P[np.newaxis, :]
-    A = np.tril(A) - np.diag(np.arange(N))
+    P = jnp.sqrt(1 + 2 * jnp.arange(N))
+    A = P[:, jnp.newaxis] * P[jnp.newaxis, :]
+    A = jnp.tril(A) - jnp.diag(jnp.arange(N))
     return -A
 
 
@@ -33,10 +33,10 @@ def make_NPLR_HiPPO(N):
     hippo = make_HiPPO(N)
 
     # Add in a rank 1 term. Makes it Normal.
-    P = np.sqrt(np.arange(N) + 0.5)
+    P = jnp.sqrt(jnp.arange(N) + 0.5)
 
     # HiPPO also specifies the B matrix
-    B = np.sqrt(2 * np.arange(N) + 1.0)
+    B = jnp.sqrt(2 * jnp.arange(N) + 1.0)
     return hippo, P, B
 
 
@@ -55,10 +55,10 @@ def make_DPLR_HiPPO(N):
     """
     A, P, B = make_NPLR_HiPPO(N)
 
-    S = A + P[:, np.newaxis] * P[np.newaxis, :]
+    S = A + P[:, jnp.newaxis] * P[jnp.newaxis, :]
 
-    S_diag = np.diagonal(S)
-    Lambda_real = np.mean(S_diag) * np.ones_like(S_diag)
+    S_diag = jnp.diagonal(S)
+    Lambda_real = jnp.mean(S_diag) * jnp.ones_like(S_diag)
 
     # Diagonalize S to V \Lambda V^*
     Lambda_imag, V = eigh(S * -1j)
@@ -87,8 +87,8 @@ def log_step_initializer(dt_min=0.001, dt_max=0.1):
                  sampled log_step (float32)
          """
         return random.uniform(key, shape) * (
-            np.log(dt_max) - np.log(dt_min)
-        ) + np.log(dt_min)
+            jnp.log(dt_max) - jnp.log(dt_min)
+        ) + jnp.log(dt_min)
 
     return init
 
@@ -109,7 +109,7 @@ def init_log_steps(key, input):
         log_step = log_step_initializer(dt_min=dt_min, dt_max=dt_max)(skey, shape=(1,))
         log_steps.append(log_step)
 
-    return np.array(log_steps)
+    return jnp.array(log_steps)
 
 
 def init_VinvB(init_fun, rng, shape, Vinv):
@@ -128,7 +128,7 @@ def init_VinvB(init_fun, rng, shape, Vinv):
     VinvB = Vinv @ B
     VinvB_real = VinvB.real
     VinvB_imag = VinvB.imag
-    return np.concatenate((VinvB_real[..., None], VinvB_imag[..., None]), axis=-1)
+    return jnp.concatenate((VinvB_real[..., None], VinvB_imag[..., None]), axis=-1)
 
 
 def trunc_standard_normal(key, shape):
@@ -145,7 +145,7 @@ def trunc_standard_normal(key, shape):
         key, skey = random.split(key)
         C = lecun_normal()(skey, shape=(1, P, 2))
         Cs.append(C)
-    return np.array(Cs)[:, 0]
+    return jnp.array(Cs)[:, 0]
 
 
 def init_CV(init_fun, rng, shape, V):
@@ -165,4 +165,4 @@ def init_CV(init_fun, rng, shape, V):
     CV = C @ V
     CV_real = CV.real
     CV_imag = CV.imag
-    return np.concatenate((CV_real[..., None], CV_imag[..., None]), axis=-1)
+    return jnp.concatenate((CV_real[..., None], CV_imag[..., None]), axis=-1)
